@@ -108,6 +108,17 @@ async fn courses(ctx: Context<'_>) -> Result<(), Error> {
 
     let courses = sqlx::query("SELECT * FROM courses").fetch_all(pool).await?;
 
+    let mut counts =
+        sqlx::query("SELECT subject_id, COUNT(*) AS count FROM questions GROUP BY subject_id;")
+            .fetch_all(pool)
+            .await?
+            .into_iter()
+            .map(|row| {
+                let id: i32 = row.get("subject_id");
+                let count: i64 = row.get("count");
+                (id, count)
+            });
+
     let mut message = String::new();
     if courses.is_empty() {
         ctx.say("No courses found").await?;
@@ -116,11 +127,15 @@ async fn courses(ctx: Context<'_>) -> Result<(), Error> {
 
     for course in courses {
         let tags = course.try_get::<Vec<String>, _>("tags")?.join(", ");
+        let id = course.try_get::<i32, _>("id")?;
         message.push_str(&format!(
-            "{}: {} [{}]\n",
-            course.try_get::<i32, _>("id")?,
+            "{}: {} [{}] - {} questions\n",
             course.try_get::<String, _>("name")?,
-            tags
+            id,
+            tags,
+            counts
+                .find_map(|e| if e.0 == id { Some(e.1) } else { None })
+                .unwrap_or_default()
         ));
     }
 

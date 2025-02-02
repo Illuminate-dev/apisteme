@@ -24,13 +24,19 @@ def main():
     # extract the questions from the ebook
 
     # page to extract questions from
-    q_page = "xhtml/Prin_9780593517147_epub3_p02-c01_r1.xhtml"
-    a_page = "xhtml/Prin_9780593517147_epub3_p02-c02_r1.xhtml"
+    q_page = "xhtml/Prin_9780593517147_epub3_p06-c03_r1.xhtml"
+    a_page = "xhtml/Prin_9780593517147_epub3_p06-c04_r1.xhtml"
     # max q to extract (so we don't get frqs)
     max_n = 80
 
     # num:[question, answer_choices, correct_answer, explanation]
     questions = {}
+
+    # for item in book.get_items_of_type(epub.ebooklib.ITEM_DOCUMENT):
+    #     print(item.get_name())
+    #     soup = BeautifulSoup(item.get_body_content(), "html.parser")
+    #     print(soup.get_text()[0:100])
+    # return
 
     # works for princeton
     for item in book.get_items_of_type(epub.ebooklib.ITEM_DOCUMENT):
@@ -70,10 +76,6 @@ def main():
             questions[num].append(explanation)
 
         
-    # for item in book.get_items_of_type(epub.ebooklib.ITEM_DOCUMENT):
-    #     print(item.get_name())
-    #     soup = BeautifulSoup(item.get_body_content(), "html.parser")
-    #     print(soup.get_text()[0:100])
 
 
     # print(questions)
