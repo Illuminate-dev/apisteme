@@ -1,18 +1,131 @@
 use anyhow::Context as _;
-use poise::serenity_prelude::{ClientBuilder, GatewayIntents};
+use poise::{
+    serenity_prelude::{ClientBuilder, GatewayIntents},
+    CreateReply,
+};
+use serenity::all::{CreateEmbed, CreateEmbedFooter};
 use shuttle_runtime::SecretStore;
 use shuttle_serenity::ShuttleSerenity;
+use sqlx::Row;
 
 struct Data {
     owner_id: u64,
+    pool: sqlx::PgPool,
 } // User data, which is stored and accessible in all command invocations
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
 
-/// Responds with "world!"
-#[poise::command(slash_command)]
-async fn hello(ctx: Context<'_>) -> Result<(), Error> {
-    ctx.say("world!").await?;
+/// Reports a question for not having enough information to solve.
+#[poise::command(prefix_command, slash_command)]
+async fn report(ctx: Context<'_>, question_id: i32, reason: Option<String>) -> Result<(), Error> {
+    let pool = &ctx.data().pool;
+    sqlx::query("INSERT INTO reports (question_id, reason) VALUES ($1, $2)")
+        .bind(question_id)
+        .bind(reason.unwrap_or_default())
+        .execute(pool)
+        .await?;
+
+    ctx.say("Question reported. Thank you for your feedback!")
+        .await?;
+
+    Ok(())
+}
+
+/// Asks a question with the given course
+#[poise::command(prefix_command, slash_command)]
+async fn ask(ctx: Context<'_>, course: String) -> Result<(), Error> {
+    let pool = &ctx.data().pool;
+
+    let course = sqlx::query(
+        "SELECT * FROM courses WHERE LOWER($1) = ANY (SELECT LOWER(unnest(tags))) OR LOWER($1) = LOWER(name)",
+    )
+    .bind(&course)
+    .fetch_one(pool)
+    .await;
+
+    let course = match course {
+        Ok(course) => course,
+        Err(sqlx::Error::RowNotFound) => {
+            ctx.say("Course not found. Use /courses to see available courses.")
+                .await?;
+            return Ok(());
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    let course_id = course.try_get::<i32, _>("id")?;
+
+    let question =
+        sqlx::query("SELECT * FROM questions WHERE subject_id = $1 ORDER BY RANDOM() LIMIT 1")
+            .bind(course_id)
+            .fetch_one(pool)
+            .await?;
+
+    let embed = CreateEmbed::default()
+        .title("Question")
+        .field(
+            "Question",
+            format!(
+                "{}\n{}",
+                question.try_get::<String, _>("question")?,
+                question.try_get::<String, _>("answer_choices")?
+            ),
+            false,
+        )
+        .field(
+            "Answers",
+            format!(
+                "||{}\n{}||",
+                question.try_get::<String, _>("correct_answer")?,
+                question.try_get::<String, _>("explanation")?
+            ),
+            false,
+        )
+        .footer(CreateEmbedFooter::new(format!(
+            "ID: {}",
+            question.try_get::<i32, _>("id")?
+        )))
+        .color(0x007848);
+
+    // let message = format!(
+    //     "**Question #{}**: {}\n{}\nAnswer: ||{}\n{}||",
+    //     question.try_get::<i32, _>("id")?,
+    //     question.try_get::<String, _>("question")?,
+    //     question.try_get::<String, _>("answer_choices")?,
+    //     question.try_get::<String, _>("correct_answer")?,
+    //     question.try_get::<String, _>("explanation")?
+    // );
+
+    ctx.send(CreateReply::default().embed(embed)).await?;
+
+    Ok(())
+}
+
+/// List available courses
+#[poise::command(prefix_command, slash_command)]
+async fn courses(ctx: Context<'_>) -> Result<(), Error> {
+    let pool = &ctx.data().pool;
+
+    let courses = sqlx::query("SELECT * FROM courses").fetch_all(pool).await?;
+
+    let mut message = String::new();
+    if courses.is_empty() {
+        ctx.say("No courses found").await?;
+        return Ok(());
+    }
+
+    for course in courses {
+        let tags = course.try_get::<Vec<String>, _>("tags")?.join(", ");
+        message.push_str(&format!(
+            "{}: {} [{}]\n",
+            course.try_get::<i32, _>("id")?,
+            course.try_get::<String, _>("name")?,
+            tags
+        ));
+    }
+
+    ctx.say(format!("```{}```", message)).await?;
+
     Ok(())
 }
 
@@ -41,7 +154,13 @@ async fn help(
 }
 
 #[shuttle_runtime::main]
-async fn main(#[shuttle_runtime::Secrets] secret_store: SecretStore) -> ShuttleSerenity {
+async fn main(
+    #[shuttle_runtime::Secrets] secret_store: SecretStore,
+    #[shuttle_shared_db::Postgres(
+        local_uri = "postgres://postgres:{secrets.POSTGRES_PASSWORD}@localhost:5432/postgres"
+    )]
+    pool: sqlx::PgPool,
+) -> ShuttleSerenity {
     // Get the discord token set in `Secrets.toml`
     let discord_token = secret_store
         .get("DISCORD_TOKEN")
@@ -52,13 +171,19 @@ async fn main(#[shuttle_runtime::Secrets] secret_store: SecretStore) -> ShuttleS
         .parse::<u64>()
         .context("Invalid 'OWNER_ID'")?;
 
+    // migrate db
+    sqlx::migrate!()
+        .run(&pool)
+        .await
+        .expect("Failed to migrate database");
+
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: Some("!".into()),
                 ..Default::default()
             },
-            commands: vec![hello(), help(), register()],
+            commands: vec![courses(), help(), register(), ask(), report()],
             ..Default::default()
         })
         .setup(move |_ctx, _ready, _framework| {
@@ -70,7 +195,7 @@ async fn main(#[shuttle_runtime::Secrets] secret_store: SecretStore) -> ShuttleS
                 // )
                 // .await
                 // .expect("failed to register");
-                Ok(Data { owner_id })
+                Ok(Data { owner_id, pool })
             })
         })
         .build();
