@@ -1,9 +1,11 @@
+use tokio::fs::File;
+
 use anyhow::Context as _;
 use poise::{
     serenity_prelude::{ClientBuilder, GatewayIntents},
     CreateReply,
 };
-use serenity::all::{CreateEmbed, CreateEmbedFooter};
+use serenity::all::{CreateAttachment, CreateEmbed, CreateEmbedFooter};
 use shuttle_runtime::SecretStore;
 use shuttle_serenity::ShuttleSerenity;
 use sqlx::Row;
@@ -61,17 +63,15 @@ async fn ask(ctx: Context<'_>, course: String) -> Result<(), Error> {
             .fetch_one(pool)
             .await?;
 
+    let image_url = question.try_get::<Option<String>, _>("image_url")?;
+
     let embed = CreateEmbed::default()
         .title("Question")
-        .field(
-            "Question",
-            format!(
-                "{}\n{}",
-                question.try_get::<String, _>("question")?,
-                question.try_get::<String, _>("answer_choices")?
-            ),
-            false,
-        )
+        .description(format!(
+            "{}\n{}",
+            question.try_get::<String, _>("question")?,
+            question.try_get::<String, _>("answer_choices")?
+        ))
         .field(
             "Answers",
             format!(
@@ -87,6 +87,21 @@ async fn ask(ctx: Context<'_>, course: String) -> Result<(), Error> {
         )))
         .color(0x007848);
 
+    if image_url.as_ref().is_none_or(|i| i.is_empty()) {
+        ctx.send(CreateReply::default().embed(embed)).await?;
+    } else {
+        eprintln!("test");
+        let image_url = image_url.unwrap();
+        let image_file = File::open(format!("./images/{}", image_url)).await?;
+
+        ctx.send(
+            CreateReply::default()
+                .embed(embed.attachment("upload.jpg"))
+                .attachment(CreateAttachment::file(&image_file, "upload.jpg").await?),
+        )
+        .await?;
+    }
+
     // let message = format!(
     //     "**Question #{}**: {}\n{}\nAnswer: ||{}\n{}||",
     //     question.try_get::<i32, _>("id")?,
@@ -95,8 +110,7 @@ async fn ask(ctx: Context<'_>, course: String) -> Result<(), Error> {
     //     question.try_get::<String, _>("correct_answer")?,
     //     question.try_get::<String, _>("explanation")?
     // );
-
-    ctx.send(CreateReply::default().embed(embed)).await?;
+    //
 
     Ok(())
 }

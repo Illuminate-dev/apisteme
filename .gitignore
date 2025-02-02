@@ -1,6 +1,7 @@
 books/
 venv/
 out/
+images/
 
 Secrets.toml
 /target
