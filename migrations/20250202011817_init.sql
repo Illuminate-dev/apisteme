@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS courses (
 
 CREATE TABLE IF NOT EXISTS questions (
   id SERIAL PRIMARY KEY,
-  subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+  subject_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
   question TEXT NOT NULL,
   explanation TEXT,
   answer_choices TEXT NOT NULL,
