@@ -1,1 +1,5 @@
+[deploy]
+include = ["images/*"]
+
+[build]
 assets = ["images/*"]
