@@ -78,7 +78,7 @@ def scrape(args):
 
             # find the next figure
             if "information" in ts:
-                info = p.find_next_sibling("p")
+                info = p.next_sibling
                 for q in qs:
                     questions[q][0] = info.get_text() + "\n" + questions[q][0]
             if "graph" in ts or "map" in ts or "diagram" in ts or "chart" in ts or "figure" in ts:

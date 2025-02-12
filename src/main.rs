@@ -63,6 +63,8 @@ async fn ask(ctx: Context<'_>, course: String) -> Result<(), Error> {
             .fetch_one(pool)
             .await?;
 
+    let question_id = question.try_get::<i32, _>("id")?;
+
     let image_url = question.try_get::<Option<String>, _>("image_url")?;
 
     let embed = CreateEmbed::default()
@@ -81,10 +83,7 @@ async fn ask(ctx: Context<'_>, course: String) -> Result<(), Error> {
             ),
             false,
         )
-        .footer(CreateEmbedFooter::new(format!(
-            "ID: {}",
-            question.try_get::<i32, _>("id")?
-        )))
+        .footer(CreateEmbedFooter::new(format!("ID: {}", question_id)))
         .color(0x007848);
 
     if image_url.as_ref().is_none_or(|i| i.is_empty()) {
@@ -92,14 +91,17 @@ async fn ask(ctx: Context<'_>, course: String) -> Result<(), Error> {
     } else {
         eprintln!("test");
         let image_url = image_url.unwrap();
-        let image_file = File::open(format!("./images/{}", image_url)).await?;
+        let image_file = File::open(format!("./images/{}", image_url))
+            .await
+            .context(question_id)?;
 
         ctx.send(
             CreateReply::default()
                 .embed(embed.attachment("upload.jpg"))
                 .attachment(CreateAttachment::file(&image_file, "upload.jpg").await?),
         )
-        .await?;
+        .await
+        .context(question_id)?;
     }
 
     // let message = format!(
