@@ -5,10 +5,16 @@ import re
 import sys
 import csv
 
+def get_pages(book):
+    pages = []
+    for item in book.get_items_of_type(epub.ebooklib.ITEM_DOCUMENT):
+        soup = BeautifulSoup(item.get_body_content(), "html.parser")
+        pages.append((item.get_name(), soup.get_text()[0:100]))
+    return pages
+
 
 
 def scrape(args):
-
     if len(args) not in [3, 4]:
         print("Usage: python scraper.py scrape <ebook> <q_page> <a_page> [max_n]\nSee avaliable pages with scraper.py list")
 
@@ -119,10 +125,10 @@ def scrape(args):
 
 
     # print(questions)
-    print("3: ", questions["3"])
+    # print("3: ", questions["3"])
 
     # write to csv file
-    with open(metadata[0]+".csv", "w") as f:
+    with open(args[0]+".csv", "w") as f:
         writer = csv.writer(f)
         writer.writerow(["number", "question", "answer_choices", "correct_answer", "explanation", "img_url"])
         for k, v in questions.items():
@@ -130,16 +136,62 @@ def scrape(args):
 
 def list_pages(args):
     book = epub.read_epub(args[0])
-    for item in book.get_items_of_type(epub.ebooklib.ITEM_DOCUMENT):
-        print("--------------------"+item.get_name()+"---------------------")
-        soup = BeautifulSoup(item.get_body_content(), "html.parser")
-        print(soup.get_text()[0:100])
+    pages = get_pages(book)
+    for name, content in pages:
+        print("--------------------"+name+"---------------------")
+        print(content)
     return
+
+
+def interactive():
+    print("Welcome to the AP Question Scraper!")
+    print("What file would you like to scrape?")
+    file = input()
+    try:
+        book = epub.read_epub(file)
+    except:
+        print("Invalid file")
+        sys.exit(1)
+
+    pages = get_pages(book)
+
+    print("Here are the pages in the ebook:")
+    for i, (name, content) in enumerate(pages):
+        print("[{}]: {:-^80}".format(i, name))
+        print(content)
+
+    print("Which page would you like to scrape questions from?")
+    q_page = input()
+    print("Which page would you like to scrape answers from?")
+    a_page = input()
+
+    try:
+        q_page = pages[int(q_page)][0]
+        a_page = pages[int(a_page)][0]
+    except:
+        print("Invalid page")
+        sys.exit(1)
+
+    print("How many questions would you like to scrape?")
+    n = input()
+    try:
+        n = int(n)
+    except:
+        print("Invalid number")
+        sys.exit(1)
+
+    scrape([file, q_page, a_page, n])
+
+
 
 
 commands = {"scrape":scrape, "list":list_pages}
 
 def main():
+    if len(sys.argv) == 1:
+        interactive()
+        sys.exit(0)
+
     if len(sys.argv) < 3 or sys.argv[1].lower() not in commands.keys():
         print("Usage: python3 scraper.py <command> <ebook>\nCommands: " + ", ".join(commands.keys()))
         sys.exit(1)
